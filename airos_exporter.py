@@ -361,7 +361,7 @@ if __name__ == "__main__":
     # Workers number is taken from environment, else take it from CPU numbers
     if WORKERS == 0:
         WORKERS = os.cpu_count()
-    print("Starting airos-exporter with {} workers".format(WORKERS))
+    print(f"Starting airos-exporter with {WORKERS} workers")
     PORT = int(os.environ.get('PORT', '8890'))
     UBNT_PASSWORD = os.environ.get('UBNT_PASSWORD', 'ubnt')
 
