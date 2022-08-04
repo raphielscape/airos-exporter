@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from concurrent.futures import thread
 import json
 import os
 import re
