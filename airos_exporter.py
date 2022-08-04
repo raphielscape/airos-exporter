@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from concurrent.futures import thread
 import json
 import os
 import re
@@ -357,12 +358,16 @@ def application(environ: Dict, start_response: Callable):
 
 
 if __name__ == "__main__":
-    WORKERS = int(os.environ.get('WORKERS', '8'))
+    WORKERS = int(os.environ.get('WORKERS', '0'))
+    # Workers number is taken from environment, else take it from CPU numbers
+    if WORKERS == 0:
+        WORKERS = os.cpu_count()
+    print("Starting airos-exporter with {} workers".format(WORKERS))
     PORT = int(os.environ.get('PORT', '8890'))
     UBNT_PASSWORD = os.environ.get('UBNT_PASSWORD', 'ubnt')
 
     print(
         f'Starting at http://0.0.0.0:{PORT}/metrics', file=stderr)
-    serve(application, host='0.0.0.0', port=PORT)
+    serve(application, host='0.0.0.0', port=PORT, threads=WORKERS)
 
     print('Exiting.', file=stderr)
