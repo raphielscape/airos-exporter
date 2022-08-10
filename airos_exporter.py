@@ -31,11 +31,7 @@ class DictX(Dict):
 class Config(DictX):
     def __missing__(self, key: Any) -> Dict[str, str]:
         key = str(key)
-        return Config({
-            k[len(key)+1:]: v
-            for (k, v) in self.items()
-            if k.startswith(key + '.')
-        })
+        return Config({k[len(key) + 1:]: v for (k, v) in self.items() if k.startswith(f'{key}.')})
 
     def __iter__(self) -> Iterator[Union[str, Dict[str, str]]]:
         if any(k.startswith('0.') for k in self.keys()):
@@ -58,12 +54,12 @@ class Config(DictX):
             self[key] = str(val)
         elif isinstance(val, Dict):
             for subkey in val.keys():
-                self.change(key + '.' + subkey, val[subkey])
+                self.change(f'{key}.{subkey}', val[subkey])
         else:
             raise TypeError
 
     def __str__(self):
-        return "\n".join("{}={}".format(key, self[key]) for key in sorted(self.keys()))
+        return "\n".join(f"{key}={self[key]}" for key in sorted(self.keys()))
 
 
 class AirOS(paramiko.SSHClient):
@@ -139,7 +135,7 @@ def application(environ: Dict, start_response: Callable):
     path = environ['PATH_INFO']
     q = parse_qs(environ.get('QUERY_STRING'))
     target = q.get('target', [None])[0]
-    if path != '/metrics' and path != '/metrics/':
+    if path not in ['/metrics', '/metrics/']:
         status = "404 Not Found"
         body = b''
         size = 0
@@ -152,108 +148,98 @@ def application(environ: Dict, start_response: Callable):
         rr: List[CollectorRegistry] = [r]
         try:
             with airos_connect(hostname=target, password=UBNT_PASSWORD) as airos:
+                labels = {"ap_mac": airos.mcastatus.get('apMac'), "device_id": airos.mcastatus.get(
+                    'deviceId'), "device_name": airos.mcastatus.get('deviceName'), "wireless_mode": airos.mcastatus.get('wlanOpmode', '')}
 
-                labels = {
-                    "ap_mac": airos.mcastatus.get('apMac'),
-                    "device_id": airos.mcastatus.get('deviceId'),
-                    "device_name": airos.mcastatus.get('deviceName'),
-                    "wireless_mode": airos.mcastatus.get('wlanOpmode', '')
-                }
-
-                # Device Health section
-                Gauge("airos_device_load_avg", 'Device Load Average', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("loadavg"))
+                Gauge("airos_device_load_avg", 'Device Load Average', labels.keys(
+                ), registry=r).labels(**labels).set(airos.mcastatus.get("loadavg"))
 
                 memFree = float(airos.mcastatus.get("memFree"))
                 memTotal = float(airos.mcastatus.get("memTotal"))
                 memUsed = memTotal - memFree
-                Gauge("airos_device_ram_usage_percent", 'Device RAM Usage', labels.keys(), registry=r).labels(**labels).set(
-                    float(memUsed / memTotal * 100))
+                Gauge("airos_device_ram_usage_percent", 'Device RAM Usage', labels.keys(
+                ), registry=r).labels(**labels).set(float(memUsed / memTotal * 100))
 
-                # Wireless section
-                Gauge("airos_airmax_quality_percents", 'The airMax Quality (AMQ) is based on the number of retries and '
-                      'the quality of the physical link', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("wlanPollingQuality"))
+                Gauge("airos_airmax_quality_percents", 'The airMax Quality (AMQ) is based on the number of retries and the quality of the physical link',
+                      labels.keys(), registry=r).labels(**labels).set(airos.mcastatus.get("wlanPollingQuality"))
 
-                Gauge("airos_airmax_capacity_percents", 'The airMax Capacity (AMC) is based on the ratio of current rate and maximum '
-                      'rate', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("wlanPollingCapacity"))
+                Gauge("airos_airmax_capacity_percents", 'The airMax Capacity (AMC) is based on the ratio of current rate and maximum rate',
+                      labels.keys(), registry=r).labels(**labels).set(airos.mcastatus.get("wlanPollingCapacity"))
 
-                Gauge("airos_wlan_tx_rate_mbps", 'Radio TX rate', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("wlanTxRate"))
+                Gauge("airos_wlan_tx_rate_mbps", 'Radio TX rate', labels.keys(
+                ), registry=r).labels(**labels).set(airos.mcastatus.get("wlanTxRate"))
 
-                Gauge("airos_wlan_rx_rate_mbps", 'Radio RX rate', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("wlanRxRate"))
+                Gauge("airos_wlan_rx_rate_mbps", 'Radio RX rate', labels.keys(
+                ), registry=r).labels(**labels).set(airos.mcastatus.get("wlanRxRate"))
 
-                Gauge("airos_signal_dbm", 'Signal', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("signal"))
+                Gauge("airos_signal_dbm", 'Signal', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("signal"))
 
-                Gauge("airos_chanbw_mhz", 'Channel Width', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("chanbw"))
+                Gauge("airos_chanbw_mhz", 'Channel Width', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("chanbw"))
 
-                Gauge("airos_center_freq_mhz", 'Frequency', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("centerFreq"))
+                Gauge("airos_center_freq_mhz", 'Frequency', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("centerFreq"))
 
-                Gauge("airos_tx_power_dbm", 'TX Power', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("txPower"))
+                Gauge("airos_tx_power_dbm", 'TX Power', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("txPower"))
 
-                Gauge("airos_chain_0_signal_dbm", 'Chan 0 Signal', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("chain0Signal"))
+                Gauge("airos_chain_0_signal_dbm", 'Chan 0 Signal', labels.keys(
+                ), registry=r).labels(**labels).set(airos.mcastatus.get("chain0Signal"))
 
-                Gauge("airos_chain_1_signal_dbm", 'Chan 1 Signal', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("chain1Signal"))
+                Gauge("airos_chain_1_signal_dbm", 'Chan 1 Signal', labels.keys(
+                ), registry=r).labels(**labels).set(airos.mcastatus.get("chain1Signal"))
 
-                Gauge("airos_noise_dbm", 'Noise Floor', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("noise"))
+                Gauge("airos_noise_dbm", 'Noise Floor', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("noise"))
 
-                Gauge("airos_distance_meter", 'Distance', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("distance"))
+                Gauge("airos_distance_meter", 'Distance', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("distance"))
 
-                Gauge("airos_lan_plugged", 'LAN plugged', labels.keys(), registry=r).labels(**labels).set(
-                    airos.mcastatus.get("lanPlugged"))
+                Gauge("airos_lan_plugged", 'LAN plugged', labels.keys(), registry=r).labels(
+                    **labels).set(airos.mcastatus.get("lanPlugged"))
 
-                Gauge("airos_ccq_percent", 'CCQ', labels.keys(), registry=r).labels(**labels).set(
-                    float(airos.mcastatus.get("ccq")) / 10)
+                Gauge("airos_ccq_percent", 'CCQ', labels.keys(), registry=r).labels(
+                    **labels).set(float(airos.mcastatus.get("ccq")) / 10)
 
-                Gauge("airos_remote_devices", 'Remote Devices', labels.keys(), registry=r).labels(**labels).set(
-                    len(airos.wstalist))
+                Gauge("airos_remote_devices", 'Remote Devices', labels.keys(),
+                      registry=r).labels(**labels).set(len(airos.wstalist))
 
-                Gauge("airos_remote_devices_extra_reporting", 'Remote Devices with Extra Reporting', labels.keys(), registry=r).labels(**labels).set(
-                    len([1 for s in airos.wstalist if "remote" in s]))
+                Gauge("airos_remote_devices_extra_reporting", 'Remote Devices with Extra Reporting', labels.keys(
+                ), registry=r).labels(**labels).set(len([1 for s in airos.wstalist if "remote" in s]))
 
-                Counter("airos_lan_rx_packets_total", "LAN RX packets", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("lanRxPackets")))
+                Counter("airos_lan_rx_packets_total", "LAN RX packets", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("lanRxPackets")))
 
-                Counter("airos_lan_tx_packets_total", "LAN TX packets", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("lanTxPackets")))
+                Counter("airos_lan_tx_packets_total", "LAN TX packets", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("lanTxPackets")))
 
-                Counter("airos_wlan_rx_packets_total", "WLAN RX packets", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("wlanRxPackets")))
+                Counter("airos_wlan_rx_packets_total", "WLAN RX packets", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("wlanRxPackets")))
 
-                Counter("airos_wlan_tx_packets_total", "WLAN TX packets", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("wlanTxPackets")))
+                Counter("airos_wlan_tx_packets_total", "WLAN TX packets", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("wlanTxPackets")))
 
-                Counter("airos_lan_rx_bytes_total", "LAN RX bytes", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("lanRxBytes")))
+                Counter("airos_lan_rx_bytes_total", "LAN RX bytes", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("lanRxBytes")))
 
-                Counter("airos_lan_tx_bytes_total", "LAN TX bytes", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("lanTxBytes")))
+                Counter("airos_lan_tx_bytes_total", "LAN TX bytes", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("lanTxBytes")))
 
-                Counter("airos_wlan_rx_bytes_total", "WLAN RX bytes", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("wlanRxBytes")))
+                Counter("airos_wlan_rx_bytes_total", "WLAN RX bytes", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("wlanRxBytes")))
 
-                Counter("airos_wlan_tx_bytes_total", "WLAN TX bytes", labels.keys(), registry=r).labels(**labels).inc(
-                    int(airos.mcastatus.get("wlanTxBytes")))
+                Counter("airos_wlan_tx_bytes_total", "WLAN TX bytes", labels.keys(
+                ), registry=r).labels(**labels).inc(int(airos.mcastatus.get("wlanTxBytes")))
 
-                # AirOS Service Uptime Percentage
                 wlanUptime = int(airos.mcastatus.get("wlanUptime"))
                 deviceUptime = int(airos.mcastatus.get("uptime"))
                 uptimeperc = wlanUptime / deviceUptime * 100
-                Gauge("airos_wireless_service_uptime_perc", "Wireless Service Uptime (Percentage)", labels.keys(), registry=r).labels(**labels).set(
-                    int(uptimeperc))
+                Gauge("airos_wireless_service_uptime_perc", "Wireless Service Uptime (Percentage)",
+                      labels.keys(), registry=r).labels(**labels).set(int(uptimeperc))
 
-                Gauge("airos_antenna_gain_dbm", 'Antenna Gain, dBi', labels.keys(), registry=r).labels(**labels).set(
-                    airos.status.get("board", {}).get("radio", [{}])[0].get("antenna", [{}])[0].get("gain", 0))
+                Gauge("airos_antenna_gain_dbm", 'Antenna Gain, dBi', labels.keys(), registry=r).labels(
+                    **labels).set(airos.status.get("board", {}).get("radio", [{}])[0].get("antenna", [{}])[0].get("gain", 0))
 
                 status_iter = airos.status.get("interfaces", [{}])[2].get(
                     "wireless", {}).get("utilization", {})
@@ -263,95 +249,82 @@ def application(environ: Dict, start_response: Callable):
                 txBusy = status_iter.get("tx_busy")
                 rxbusyperc = rxBusy / wlanBusy * 100
                 txbusyperc = txBusy / wlanBusy * 100
-                Gauge("airos_wlan_rx_busy_percentage", 'RX Busy (Percentage)', labels.keys(), registry=r).labels(**labels).set(
-                    int(rxbusyperc))
+                Gauge("airos_wlan_rx_busy_percentage", 'RX Busy (Percentage)',
+                      labels.keys(), registry=r).labels(**labels).set(int(rxbusyperc))
 
-                Gauge("airos_wlan_tx_busy_percentage", 'TX Busy (Percentage)', labels.keys(), registry=r).labels(**labels).set(
-                    int(txbusyperc))
+                Gauge("airos_wlan_tx_busy_percentage", 'TX Busy (Percentage)',
+                      labels.keys(), registry=r).labels(**labels).set(int(txbusyperc))
 
                 for remote in airos.wstalist:
                     r2 = CollectorRegistry()
+                    remote_labels: Dict[str, str] = {'remote_mac': remote['mac'], 'remote_lastip': remote['lastip'], 'remote_hostname': str(
+                        remote.get('remote', {}).get('hostname', remote.get('name', '')))}
 
-                    remote_labels: Dict[str, str] = {}
-                    remote_labels['remote_mac'] = remote['mac']
-                    remote_labels['remote_lastip'] = remote['lastip']
-                    remote_labels['remote_hostname'] = str(remote.get(
-                        'remote', {}).get('hostname', remote.get('name', '')))
                     if remote.get('remote', {}).get('platform'):
                         remote_labels['remote_platform'] = remote.get(
                             'remote', {}).get('platform')
                     if remote.get('remote', {}).get('version'):
                         remote_labels['remote_version'] = remote.get(
                             'remote', {}).get('version')
+                    labels2 = labels | remote_labels
+                    Gauge("airos_remote_ccq_percent", 'Remote CCQ', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get("ccq"))
 
-                    labels2 = labels.copy()
-                    labels2.update(remote_labels)
-                    Gauge("airos_remote_ccq_percent", 'Remote CCQ', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get("ccq"))
+                    Gauge("airos_remote_tx_rate_mbps", 'Remote TX Rate', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('tx'))
 
-                    Gauge("airos_remote_tx_rate_mbps", 'Remote TX Rate', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('tx'))
+                    Gauge("airos_remote_rx_rate_mbps", 'Remote TX Rate', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('rx'))
 
-                    Gauge("airos_remote_rx_rate_mbps", 'Remote TX Rate', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('rx'))
+                    Gauge("airos_remote_tx_latency_seconds", 'Remote TX Latency', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(float(remote.get("tx_latency", 0)) / 1000)
 
-                    Gauge("airos_remote_tx_latency_seconds", 'Remote TX Latency', labels2.keys(), registry=r2).labels(**labels2).set(
-                        float(remote.get("tx_latency", 0)) / 1000)
+                    Gauge("airos_remote_rssi_dbm", 'Remote RSSI', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get("rssi"))
 
-                    Gauge("airos_remote_rssi_dbm", 'Remote RSSI', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get("rssi"))
+                    Gauge("airos_remote_tx_power_dbm", 'Remote TX Power', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('txpower'))
 
-                    Gauge("airos_remote_tx_power_dbm", 'Remote TX Power', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('txpower'))
+                    Gauge("airos_remote_tx_signal_dbm", 'Signal received by remote device', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('signal'))
 
-                    Gauge("airos_remote_tx_signal_dbm", 'Signal received by remote device', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('signal'))
+                    Gauge("airos_remote_noise_floor_dbm", 'Remote Noise Floor', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('noisefloor'))
 
-                    Gauge("airos_remote_noise_floor_dbm", 'Remote Noise Floor', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('noisefloor'))
+                    Gauge("airos_remote_distance_meters", 'Remote Distance', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('distance'))
 
-                    Gauge("airos_remote_distance_meters", 'Remote Distance', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('distance'))
+                    Counter("airos_remote_tx_bytes_total", 'Bytes sent by remote device', labels2.keys(
+                    ), registry=r2).labels(**labels2).inc(remote.get('stats', {}).get('tx_bytes'))
 
-                    Counter("airos_remote_tx_bytes_total", 'Bytes sent by remote device', labels2.keys(), registry=r2).labels(**labels2).inc(
-                        remote.get('stats', {}).get('tx_bytes'))
+                    Counter("airos_remote_rx_bytes_total", 'Bytes received by remote device', labels2.keys(
+                    ), registry=r2).labels(**labels2).inc(remote.get('stats', {}).get('rx_bytes'))
 
-                    Counter("airos_remote_rx_bytes_total", 'Bytes received by remote device', labels2.keys(), registry=r2).labels(**labels2).inc(
-                        remote.get('stats', {}).get('rx_bytes'))
+                    Gauge("airos_remote_amq", 'Remote airMax Quality', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('airmax', {}).get('quality'))
 
-                    Gauge("airos_remote_amq", 'Remote airMax Quality', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('airmax', {}).get('quality'))
+                    Gauge("airos_remote_amc", 'Remote airMax Capacity', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('airmax', {}).get('capacity'))
 
-                    Gauge("airos_remote_amc", 'Remote airMax Capacity', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('airmax', {}).get('capacity'))
-
-                    Gauge("airos_remote_airmax_priority", 'Remote airMax Priority', labels2.keys(), registry=r2).labels(**labels2).set(
-                        remote.get('airmax', {}).get('priority'))
+                    Gauge("airos_remote_airmax_priority", 'Remote airMax Priority', labels2.keys(
+                    ), registry=r2).labels(**labels2).set(remote.get('airmax', {}).get('priority'))
 
                     wlanUptime = int(remote.get('uptime'))
                     deviceUptime = int(airos.mcastatus.get("uptime"))
                     percentage = wlanUptime / deviceUptime * 100
-                    Gauge("airos_remote_uptime_perc", "Wireless Service Uptime (Percentage)", labels2.keys(), registry=r2).labels(**labels2).set(
-                        int(percentage))
+                    Gauge("airos_remote_uptime_perc", "Wireless Service Uptime (Percentage)",
+                          labels2.keys(), registry=r2).labels(**labels2).set(int(percentage))
 
                     rr.append(r2)
-
                 Gauge('airos_error', '', labels.keys(),
                       registry=r).labels(**labels).set(0)
-
         except Exception as e:
             Gauge('airos_error', '', ['error'],
                   registry=r).labels(error=str(e)).set(1)
-
         status = "200 OK"
         body = b''.join(generate_latest(registry=reg) for reg in rr)
         size = len(body)
-
-    headers = [
-        ('Content-Type', mime),
-        ('Content-Length', str(size))
-    ]
-
+    headers = [('Content-Type', mime), ('Content-Length', str(size))]
     start_response(status, headers)
     return [body]
 
